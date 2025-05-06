@@ -7,16 +7,16 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "AI Unit Test Generator",
-  description: "Generate unit tests for your code using AI",
+  description: "Generate comprehensive unit tests using advanced AI models",
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <Providers>{children}</Providers>
       </body>
