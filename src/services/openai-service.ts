@@ -2,47 +2,32 @@ import OpenAI from "openai";
 import { AIGenerateTestParams, AIService } from "@/types/ai";
 
 export class OpenAIService implements AIService {
-  private client: OpenAI;
+  private openai: OpenAI;
 
   constructor() {
-    this.client = new OpenAI({
+    this.openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
   }
 
-  async generateTest({
-    code,
-    testFramework,
-  }: AIGenerateTestParams): Promise<string> {
-    const prompt = `Generate a unit test for the following code using ${testFramework}. The test should be comprehensive and follow best practices. Include comments explaining the test cases.
+  async generateTest(params: AIGenerateTestParams): Promise<string> {
+    const { code, testFramework, model } = params;
 
-Code:
-${code}
-
-Generate the test code:`;
-
-    const completion = await this.client.chat.completions.create({
-      model: "gpt-4",
+    const response = await this.openai.chat.completions.create({
+      model,
       messages: [
         {
           role: "system",
-          content:
-            "You are a helpful assistant that generates unit tests. You should provide complete, working test code that follows best practices.",
+          content: `You are an expert at writing unit tests. Generate a comprehensive unit test for the provided code using ${testFramework}. Include test cases for edge cases and error scenarios.`,
         },
         {
           role: "user",
-          content: prompt,
+          content: code,
         },
       ],
-      temperature: 0.7,
+      temperature: 0.2,
     });
 
-    const generatedTest = completion.choices[0]?.message?.content;
-
-    if (!generatedTest) {
-      throw new Error("No test generated");
-    }
-
-    return generatedTest;
+    return response.choices[0].message.content || "";
   }
 }
