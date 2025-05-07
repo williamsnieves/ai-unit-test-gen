@@ -2,43 +2,33 @@ import Anthropic from "@anthropic-ai/sdk";
 import { AIGenerateTestParams, AIService } from "@/types/ai";
 
 export class AnthropicService implements AIService {
-  private client: Anthropic;
+  private anthropic: Anthropic;
 
   constructor() {
-    this.client = new Anthropic({
+    this.anthropic = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
     });
   }
 
-  async generateTest({
-    code,
-    testFramework,
-  }: AIGenerateTestParams): Promise<string> {
-    const prompt = `Generate a unit test for the following code using ${testFramework}. The test should be comprehensive and follow best practices. Include comments explaining the test cases.
+  async generateTest(params: AIGenerateTestParams): Promise<string> {
+    const { code, testFramework } = params;
 
-Code:
-${code}
-
-Generate the test code:`;
-
-    const message = await this.client.messages.create({
+    const response = await this.anthropic.messages.create({
       model: "claude-3-5-sonnet-latest",
       max_tokens: 4000,
       messages: [
         {
           role: "user",
-          content: prompt,
+          content: `Generate a comprehensive unit test for the following code using ${testFramework}. Include test cases for edge cases and error scenarios:\n\n${code}`,
         },
       ],
-      temperature: 0.7,
     });
 
-    // The first content block should be text
-    const contentBlock = message.content[0];
-    if (!contentBlock || contentBlock.type !== "text") {
-      throw new Error("No text content generated");
+    const content = response.content[0];
+    if (content.type !== "text") {
+      throw new Error("Expected text response from Claude");
     }
 
-    return contentBlock.text;
+    return content.text;
   }
 }
