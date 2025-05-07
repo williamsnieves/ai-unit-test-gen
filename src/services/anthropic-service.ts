@@ -4,16 +4,104 @@ import { ANTHROPIC_TOOLS } from "@/config/tools.config";
 
 export class AnthropicService implements AIService {
   private anthropic: Anthropic;
+  public supportsStreaming = true;
 
   constructor() {
     this.anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
+      apiKey: process.env.ANTHROPIC_API_KEY || "",
     });
   }
 
   async generateTest(params: AIGenerateTestParams): Promise<string> {
-    const { code, testFramework } = params;
+    const { code, testFramework, streaming = false } = params;
 
+    const message = {
+      system:
+        "[STRICT MODE] NO CONVERSATION. NO ANALYSIS. NO EXPLANATIONS. ONLY GENERATE THE COMPLETE TEST CODE.",
+      user: `Generate a complete unit test suite for this code using ${testFramework}:
+
+\`\`\`${params.codeType || "javascript"}
+${code}
+\`\`\`
+
+Requirements:
+- Write clean, maintainable, and self-documenting test code
+- Include comprehensive test cases covering edge cases and error conditions
+- Follow ${testFramework} best practices and conventions
+- Include proper setup and teardown if needed
+- Use descriptive test names that explain what is being tested`,
+    };
+
+    try {
+      if (streaming) {
+        const stream = await this.anthropic.messages.create({
+          model: "claude-3-5-sonnet-latest",
+          max_tokens: 4000,
+          temperature: 0.2,
+          system: message.system,
+          messages: [{ role: "user", content: message.user }],
+          tools: ANTHROPIC_TOOLS,
+          tool_choice: { type: "auto" },
+          stream: true,
+        });
+
+        let response = "";
+        let toolUse: Anthropic.ToolUseBlock | null = null;
+
+        for await (const chunk of stream) {
+          if (chunk.type === "content_block_delta" && "text" in chunk.delta) {
+            response += chunk.delta.text;
+          } else if (
+            chunk.type === "content_block_start" &&
+            chunk.content_block.type === "tool_use"
+          ) {
+            toolUse = chunk.content_block;
+          }
+        }
+
+        // If we got a tool response, handle it
+        if (toolUse) {
+          return await this.handleToolUse(toolUse, code, testFramework);
+        }
+
+        return response;
+      }
+
+      const response = await this.anthropic.messages.create({
+        model: "claude-3-5-sonnet-latest",
+        max_tokens: 4000,
+        temperature: 0.2,
+        system: message.system,
+        messages: [{ role: "user", content: message.user }],
+        tools: ANTHROPIC_TOOLS,
+        tool_choice: { type: "auto" },
+      });
+
+      const content = response.content[0];
+      if (!content) {
+        throw new Error("No content in response from Claude");
+      }
+
+      // Handle different response types
+      if (content.type === "text") {
+        return content.text;
+      } else if (content.type === "tool_use") {
+        // If it's a tool response, we need to handle it
+        return await this.handleToolUse(content, code, testFramework);
+      }
+
+      throw new Error(`Unexpected response type from Claude: ${content.type}`);
+    } catch (error) {
+      console.error("Error generating test with Anthropic:", error);
+      throw error;
+    }
+  }
+
+  private async handleToolUse(
+    toolUse: Anthropic.ToolUseBlock,
+    code: string,
+    testFramework: string
+  ): Promise<string> {
     const response = await this.anthropic.messages.create({
       model: "claude-3-5-sonnet-latest",
       max_tokens: 4000,
@@ -22,56 +110,18 @@ export class AnthropicService implements AIService {
           role: "user",
           content: `[STRICT MODE]
 NO CONVERSATION. NO ANALYSIS. NO EXPLANATIONS.
-ONLY GENERATE TESTS AND USE TOOL.
+ONLY GENERATE THE COMPLETE TEST CODE.
 
+Generate a complete unit test suite for this code using ${testFramework}. The test suite must:
+- Test all edge cases and error conditions
+- Include proper setup and teardown
+- Use descriptive test names
+- Follow the ${testFramework} best practices
+
+Code to test:
 \`\`\`
 ${code}
-\`\`\`
-
-${testFramework}`,
-        },
-      ],
-      tools: ANTHROPIC_TOOLS,
-      tool_choice: { type: "auto" },
-    });
-
-    const content = response.content[0];
-    if (content.type !== "text" && content.type !== "tool_use") {
-      throw new Error("Expected text or tool_use response from Claude");
-    }
-
-    if (content.type === "tool_use") {
-      // Handle tool use by making another request with the tool result
-      const toolResult = await this.handleToolUse(content, code, testFramework);
-      return toolResult;
-    }
-
-    return content.text;
-  }
-
-  private async handleToolUse(
-    toolUse: Anthropic.ToolUseBlock,
-    code: string,
-    testFramework: string
-  ): Promise<string> {
-    // Create a new message with the tool result
-    const response = await this.anthropic.messages.create({
-      model: "claude-3-5-sonnet-latest",
-      max_tokens: 4000,
-      messages: [
-        {
-          role: "user",
-          content: `You are an expert at writing unit tests. Your task is to:
-1. Generate comprehensive unit tests for the provided code
-2. Use the explainTestGeneration tool to provide a detailed explanation of your implementation
-
-The explanation should cover:
-- Test Coverage: What functionality is being tested and why each test case is important
-- Testing Strategy: Your approach to test organization and choice of test cases
-- Implementation Details: How the tests are structured and why certain assertions are used
-- Best Practices: How the tests follow testing best practices and ensure maintainability
-
-Always use the explainTestGeneration tool to provide your explanation. Do not provide explanations directly in the response.`,
+\`\`\``,
         },
         {
           role: "assistant",
@@ -131,7 +181,7 @@ Always use the explainTestGeneration tool to provide your explanation. Do not pr
     });
 
     const content = response.content[0];
-    if (content.type !== "text") {
+    if (!content || content.type !== "text") {
       throw new Error("Expected text response from Claude");
     }
 

@@ -1,9 +1,10 @@
 import OpenAI from "openai";
-import { AIGenerateTestParams, AIService } from "@/types/ai";
+import { AIService, AIGenerateTestParams } from "@/types/ai";
 import { OPENAI_TOOLS } from "@/config/tools.config";
 
 export class OpenAIService implements AIService {
   private openai: OpenAI;
+  public supportsStreaming = true;
 
   constructor() {
     this.openai = new OpenAI({
@@ -11,83 +12,76 @@ export class OpenAIService implements AIService {
     });
   }
 
-  async generateTest(params: AIGenerateTestParams): Promise<string> {
-    const { code, testFramework, model } = params;
+  async generateTest({
+    code,
+    testFramework,
+    model,
+    codeType = "javascript",
+    streaming = false,
+  }: AIGenerateTestParams): Promise<string> {
+    const messages = [
+      {
+        role: "system" as const,
+        content: `You are an expert at writing clean, maintainable, and self-documenting code. Follow these guidelines strictly:
 
-    const response = await this.openai.chat.completions.create({
-      model,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are an expert at writing unit tests. Follow the provided prompt structure exactly. Write clean, maintainable, and self-documenting code.",
-        },
-        {
-          role: "user",
-          content: `Generate a comprehensive unit test for this code using ${testFramework}:\n\n${code}`,
-        },
-      ],
-      tools: OPENAI_TOOLS,
-      tool_choice: "auto",
-      temperature: 0.2,
-    });
+1. Write code that is easy to read and understand
+2. Use meaningful variable and function names
+3. Add comments only when necessary to explain complex logic
+4. Follow the language's best practices and conventions
+5. Keep functions small and focused on a single responsibility
+6. Use proper error handling and edge cases
+7. Write tests that are clear and well-structured
 
-    const message = response.choices[0].message;
-    if (!message.content && !message.tool_calls) {
-      throw new Error("No response generated from the model");
-    }
+Generate a complete unit test suite for the provided code using ${testFramework}. The test suite should:
+- Test all edge cases and error conditions
+- Include proper setup and teardown
+- Use descriptive test names
+- Follow the ${testFramework} best practices
+- Be written in ${codeType}
 
-    // If we get a tool call, make another request to generate the actual test
-    if (message.tool_calls) {
-      const testResponse = await this.openai.chat.completions.create({
+DO NOT include any explanations or comments in the response. Only provide the complete test code.`,
+      },
+      {
+        role: "user" as const,
+        content: `Generate a complete unit test suite for this ${codeType} code using ${testFramework}:\n\n${code}`,
+      },
+    ];
+
+    try {
+      if (streaming) {
+        const stream = await this.openai.chat.completions.create({
+          model,
+          messages,
+          tools: OPENAI_TOOLS,
+          tool_choice: "auto",
+          stream: true,
+        });
+
+        let fullResponse = "";
+        for await (const chunk of stream) {
+          const content = chunk.choices[0]?.delta?.content || "";
+          fullResponse += content;
+        }
+        return fullResponse;
+      }
+
+      const response = await this.openai.chat.completions.create({
         model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an expert at writing unit tests. Follow the provided prompt structure exactly. Write clean, maintainable, and self-documenting code.",
-          },
-          {
-            role: "user",
-            content: `Generate a comprehensive unit test for this code using ${testFramework}. Follow these guidelines:
-
-1. Test Suite Structure:
-   - Use describe blocks for grouping related tests
-   - Use clear, descriptive test names
-   - Follow AAA pattern (Arrange, Act, Assert)
-
-2. Test Cases:
-   - Include happy path scenarios
-   - Include edge cases
-   - Include error scenarios
-   - Use appropriate assertions
-
-3. Code Style:
-   - Use proper indentation
-   - Add comments for complex logic if it is strictly necessary (code should speak clearly)
-   - Follow clean code rules
-   - Follow best practices for ${testFramework}
-
-4. Important Considerations:
-   - Ensure all test cases are meaningful and test actual functionality
-   - Avoid testing implementation details
-   - Make sure mocks and stubs are properly set up
-   - Verify all assertions are valid and necessary
-   - Keep code self-documenting and minimize comments
-   - Follow SOLID principles and clean code practices
-
-Code to test:
-\`\`\`
-${code}
-\`\`\``,
-          },
-        ],
-        temperature: 0.2,
+        messages,
+        tools: OPENAI_TOOLS,
+        tool_choice: "auto",
+        stream: false,
       });
 
-      return testResponse.choices[0].message.content || "";
-    }
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error("No content in response");
+      }
 
-    return message.content || "";
+      return content;
+    } catch (error) {
+      console.error("Error generating test with OpenAI:", error);
+      throw error;
+    }
   }
 }
