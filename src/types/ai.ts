@@ -1,10 +1,13 @@
-export type AIModel =
-  | "gpt-4"
-  | "claude-3-5-sonnet-latest"
-  | "qwen2.5-coder-32b"
-  | "codeqwen1.5-7b"
-  | "codellama-70b"
-  | "deepseek-coder-33b";
+export enum AIModelEnum {
+  GPT4 = "gpt-4",
+  CLAUDE = "claude-3-5-sonnet-latest",
+  QWEN_32B = "qwen2.5-coder-32b",
+  CODEQWEN_7B = "codeqwen1.5-7b",
+  CODELLAMA_70B = "codellama-70b",
+  DEEPSEEK_33B = "deepseek-coder-33b",
+}
+
+export type AIModel = AIModelEnum;
 
 export type TestFramework = "jest" | "vitest" | "mocha";
 
