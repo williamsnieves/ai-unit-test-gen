@@ -1,12 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useQuery } from "@tanstack/react-query";
 import { AIModel } from "@/types/ai";
 import { AI_CONFIG } from "@/config/ai";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 export default function Home() {
   const [code, setCode] = useState("");
@@ -14,24 +18,87 @@ export default function Home() {
     AI_CONFIG.defaultTestFramework
   );
   const [model, setModel] = useState<AIModel>(AI_CONFIG.defaultModel);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamedResponse, setStreamedResponse] = useState("");
+  const [codeType, setCodeType] = useState<"javascript" | "typescript">(
+    "javascript"
+  );
+
+  // Detect code type
+  useEffect(() => {
+    if (code) {
+      const hasTypeAnnotations =
+        /:\s*(string|number|boolean|any|void|never|unknown|object|Array|Promise|Function|Date|RegExp|Error|Map|Set|WeakMap|WeakSet|Symbol|BigInt|Uint8Array|Uint16Array|Uint32Array|Int8Array|Int16Array|Int32Array|Float32Array|Float64Array|BigUint64Array|BigInt64Array|DataView|ArrayBuffer|SharedArrayBuffer|ReadonlyArray|ReadonlyMap|ReadonlySet|Readonly<T>|Partial<T>|Required<T>|Pick<T>|Omit<T>|Record<K>|Exclude<T>|Extract<T>|NonNullable<T>|ReturnType<T>|InstanceType<T>|ThisType<T>|Uppercase<T>|Lowercase<T>|Capitalize<T>|Uncapitalize<T>)/.test(
+          code
+        );
+      setCodeType(hasTypeAnnotations ? "typescript" : "javascript");
+    }
+  }, [code]);
 
   const {
     data: generatedTest,
     isLoading,
     refetch,
   } = useQuery({
-    queryKey: ["generateTest", code, testFramework, model],
+    queryKey: ["generateTest", code, testFramework, model, isStreaming],
     queryFn: async () => {
       if (!code) return null;
-      const response = await fetch("/api/generate-test", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ code, testFramework, model }),
-      });
-      if (!response.ok) throw new Error("Failed to generate test");
-      return response.text();
+
+      if (isStreaming) {
+        setStreamedResponse("");
+        const response = await fetch("/api/generate-test", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            code,
+            testFramework,
+            model,
+            streaming: true,
+            codeType,
+          }),
+        });
+
+        if (!response.ok) throw new Error("Failed to generate test");
+
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("No reader available");
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const text = new TextDecoder().decode(value);
+            setStreamedResponse((prev) => prev + text);
+          }
+        } catch (error) {
+          console.error("Error reading stream:", error);
+          throw error;
+        } finally {
+          reader.releaseLock();
+        }
+
+        return streamedResponse;
+      } else {
+        const response = await fetch("/api/generate-test", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            code,
+            testFramework,
+            model,
+            streaming: false,
+            codeType,
+          }),
+        });
+
+        if (!response.ok) throw new Error("Failed to generate test");
+        return response.text();
+      }
     },
     enabled: false,
   });
@@ -64,12 +131,25 @@ export default function Home() {
                     Select AI Model:
                   </label>
                   <div className="grid grid-cols-2 gap-2">
-                    {Object.entries(AI_CONFIG.models).map(
-                      ([modelId, modelInfo]) => (
+                    {(
+                      Object.keys(AI_CONFIG.models) as Array<
+                        keyof typeof AI_CONFIG.models
+                      >
+                    ).map((modelId) => {
+                      const modelInfo = AI_CONFIG.models[modelId];
+                      return (
                         <Button
                           key={modelId}
-                          variant={model === modelId ? "default" : "outline"}
-                          onClick={() => setModel(modelId as AIModel)}
+                          variant="outline"
+                          onClick={() => {
+                            setModel(modelId as AIModel);
+                            if (
+                              modelId !== "gpt-4" &&
+                              modelId !== "claude-3-5-sonnet-latest"
+                            ) {
+                              setIsStreaming(false);
+                            }
+                          }}
                           className={`w-full justify-start gap-2 transition-all duration-200 ${
                             model === modelId
                               ? "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white border-none shadow-lg"
@@ -83,8 +163,8 @@ export default function Home() {
                           ></span>
                           {modelInfo.name}
                         </Button>
-                      )
-                    )}
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -122,17 +202,55 @@ export default function Home() {
                     )}
                   </div>
                 </div>
+
+                <div className="flex items-center space-x-3 p-3 rounded-lg bg-muted/30">
+                  {(model === "gpt-4" ||
+                    model === "claude-3-5-sonnet-latest") && (
+                    <>
+                      <Switch
+                        id="streaming"
+                        checked={isStreaming}
+                        onCheckedChange={setIsStreaming}
+                      />
+                      <Label htmlFor="streaming" className="font-medium">
+                        Enable Streaming Response
+                      </Label>
+                    </>
+                  )}
+                </div>
+
+                <div className="text-sm text-muted-foreground">
+                  Detected Code Type:{" "}
+                  <span className="font-medium">{codeType}</span>
+                </div>
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">Enter your code:</label>
                 <div className="gradient-border">
-                  <Textarea
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    placeholder="Paste your code here..."
-                    className="min-h-[300px] font-mono bg-background/50"
-                  />
+                  <div className="relative">
+                    <Textarea
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      placeholder="Paste your code here..."
+                      className="min-h-[300px] font-mono bg-transparent relative z-10 text-transparent caret-foreground"
+                    />
+                    <div className="absolute inset-0 pointer-events-none">
+                      <SyntaxHighlighter
+                        language={codeType}
+                        style={vscDarkPlus}
+                        customStyle={{
+                          margin: 0,
+                          borderRadius: "0.5rem",
+                          background: "transparent",
+                          height: "100%",
+                        }}
+                        showLineNumbers
+                      >
+                        {code || " "}
+                      </SyntaxHighlighter>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -147,23 +265,36 @@ export default function Home() {
           </div>
 
           <div className="space-y-6">
-            {generatedTest ? (
+            {generatedTest || streamedResponse ? (
               <div className="glass-card p-6 rounded-lg space-y-4">
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium">Generated Test:</label>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => navigator.clipboard.writeText(generatedTest)}
+                    onClick={() =>
+                      navigator.clipboard.writeText(
+                        (isStreaming ? streamedResponse : generatedTest) || ""
+                      )
+                    }
                     className="text-xs cursor-pointer"
                   >
                     Copy to Clipboard
                   </Button>
                 </div>
                 <div className="gradient-border">
-                  <pre className="p-4 bg-background/50 rounded-lg overflow-auto max-h-[600px] font-mono text-sm">
-                    <code>{generatedTest}</code>
-                  </pre>
+                  <SyntaxHighlighter
+                    language={codeType}
+                    style={vscDarkPlus}
+                    customStyle={{
+                      margin: 0,
+                      borderRadius: "0.5rem",
+                      background: "transparent",
+                    }}
+                    showLineNumbers
+                  >
+                    {(isStreaming ? streamedResponse : generatedTest) || ""}
+                  </SyntaxHighlighter>
                 </div>
               </div>
             ) : (
