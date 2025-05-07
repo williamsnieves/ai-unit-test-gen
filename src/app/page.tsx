@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useQuery } from "@tanstack/react-query";
-import { AIModel } from "@/types/ai";
+import { AIModel, AIModelEnum } from "@/types/ai";
 import { AI_CONFIG } from "@/config/ai";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Switch } from "@/components/ui/switch";
@@ -144,8 +144,8 @@ export default function Home() {
                           onClick={() => {
                             setModel(modelId as AIModel);
                             if (
-                              modelId !== "gpt-4" &&
-                              modelId !== "claude-3-5-sonnet-latest"
+                              modelId !== AIModelEnum.GPT4 &&
+                              modelId !== AIModelEnum.CLAUDE
                             ) {
                               setIsStreaming(false);
                             }
@@ -204,8 +204,8 @@ export default function Home() {
                 </div>
 
                 <div className="flex items-center space-x-3 p-3 rounded-lg bg-muted/30">
-                  {(model === "gpt-4" ||
-                    model === "claude-3-5-sonnet-latest") && (
+                  {(model === AIModelEnum.GPT4 ||
+                    model === AIModelEnum.CLAUDE) && (
                     <>
                       <Switch
                         id="streaming"

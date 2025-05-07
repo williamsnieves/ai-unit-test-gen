@@ -1,4 +1,4 @@
-import { AIModel } from "@/types/ai";
+import { AIModelEnum } from "@/types/ai";
 
 type ModelInfo = {
   name: string;
@@ -13,53 +13,57 @@ type TestFrameworkInfo = {
   description: string;
 };
 
+type ModelsConfig = {
+  [K in AIModelEnum]: ModelInfo;
+};
+
 export const AI_CONFIG = {
-  defaultModel: "gpt-4" as AIModel,
+  defaultModel: AIModelEnum.GPT4,
   defaultTestFramework: "jest" as const,
   models: {
-    "gpt-4": {
+    [AIModelEnum.GPT4]: {
       name: "GPT-4",
       provider: "openai",
       maxTokens: 4000,
       description: "OpenAI's most advanced model",
       supportsStreaming: true,
     },
-    "claude-3-5-sonnet-latest": {
+    [AIModelEnum.CLAUDE]: {
       name: "Claude 3.5 Sonnet",
       provider: "anthropic",
       maxTokens: 4000,
       description: "Anthropic's latest Claude 3.5 Sonnet model",
       supportsStreaming: true,
     },
-    "qwen2.5-coder-32b": {
+    [AIModelEnum.QWEN_32B]: {
       name: "Qwen 2.5 Coder 32B",
       provider: "huggingface",
       maxTokens: 4000,
       description: "Alibaba's advanced coding model",
       supportsStreaming: false,
     },
-    "codeqwen1.5-7b": {
+    [AIModelEnum.CODEQWEN_7B]: {
       name: "CodeQwen 1.5 7B",
       provider: "huggingface",
       maxTokens: 4000,
       description: "Alibaba's efficient coding model",
       supportsStreaming: false,
     },
-    "codellama-70b": {
+    [AIModelEnum.CODELLAMA_70B]: {
       name: "CodeLlama 70B",
       provider: "huggingface",
       maxTokens: 4000,
       description: "Meta's largest coding model",
       supportsStreaming: false,
     },
-    "deepseek-coder-33b": {
+    [AIModelEnum.DEEPSEEK_33B]: {
       name: "DeepSeek Coder 33B",
       provider: "huggingface",
       maxTokens: 4000,
       description: "DeepSeek's advanced coding model",
       supportsStreaming: false,
     },
-  } as const,
+  } satisfies ModelsConfig,
   testFrameworks: {
     jest: {
       name: "Jest",
